@@ -1,0 +1,5 @@
+mesh = bpy.data.meshes.new(name)
+mesh.from_pydata(verts, edges, faces)
+mesh.update()
+ob_new = bpy.data.objects.new(name, mesh)
+scene.objects.link(ob_new)
