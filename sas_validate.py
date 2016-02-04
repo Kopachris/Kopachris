@@ -51,6 +51,32 @@ def validate(v_id, v_seq):
     v.reverse()
     
     return '00' + ''.join([str(x) for x in v])
+    
+    
+def search(v_num, v_id=None, v_seq=None):
+    """Brute-force search for a validation ID or sequence number given
+    the other and a validation number.
+    """
+    
+    if v_id is not None:
+        print("Working with validation ID %i..." % v_id)
+        for i in range(1<<24):
+            v = validate(v_id, i)
+            if v == v_num:
+                print("Found %i with ID %i and sequence %i" % (v_num, v_id, i))
+                return (v_id, i)
+    elif v_seq is not None:
+        print("Working with validation sequence %i..." % v_seq)
+        for i in range(1<<24):
+            v = validate(i, v_seq)
+            if v == v_num:
+                print("Found %i with ID %i and sequence %i" % (v_num, i, v_seq))
+                return (i, v_seq)
+    else:
+        raise ValueError("Must have either validation ID or sequence")
+    
+    print("Not found")
+    return False
 
     
 if __name__ == '__main__':
