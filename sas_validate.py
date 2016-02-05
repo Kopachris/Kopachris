@@ -80,4 +80,9 @@ def search(v_num, v_id=None, v_seq=None):
 
     
 if __name__ == '__main__':
-    print(validate(0x654321, 0x01))
+    v_num = input("Validation number? ")
+    v_id = input("Validation ID? ")
+    v_id = int(v_id) if v_id else None
+    v_seq = input("Validation sequence? ")
+    v_seq = int(v_seq) if v_seq else None
+    search(v_num, v_id, v_seq)
