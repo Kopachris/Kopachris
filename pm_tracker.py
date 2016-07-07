@@ -4,6 +4,7 @@ import cmd
 import sys
 import os
 import csv
+import json
 
 import colorama as col
 from pydal import DAL, Field
@@ -73,13 +74,92 @@ def import_machines(db, f):
     with f.open() as csvfile:
         csvreader = csv.DictReader(csvfile)
         for r in csvreader:
-            db.all_machines.update_or_insert(
-                db.all_machines.smid == r['SlotMastID'],
-                on_floor=r['OnFloor'],
-                smid=r['SlotMastID'],
-                slot_num=r['SlotNumber'],
-                loc_casino=r['
+            machine = dict()
+            
+            machine['on_floor'] = True if r['OnFloor'] == 'Y' else False
+            machine['smid'] = int(r['SlotMastID'])
+            machine['slot_num'] = int(r['SlotNumber'])
+            
+            # LocationString like '01 A-02-01'
+            location = r['LocationString'].split()
+            machine['loc_casino'] = int(location[0])
+            machine['loc_row'] = location[1]
+            
+            # OasisID like '01-45-10'
+            oasis_id = r['OasisID'].split('-')
+            machine['oid_dpu'] = int(oasis_id[1])
+            machine['oid_box'] = int(oasis_id[2])
+            
+            machine['acct_denom'] = float(r['Denom'].strip('$'))
+            machine['mktg_id'] = r['MktgID']
+            
+            # MD Denominations like '.05/.25/.50/1.00'
+            machine['md_denoms'] = [float(x) for x in r['MD Denominations'].split('/']
+            
+            machine['par'] = float(r['Par'].strip('%'))
+            machine['description'] = r['Description']
+            machine['game_series'] = r['Game Series']
+            machine['paylines'] = int(r['# Paylines'])
+            machine['reels'] = int(r['# Reels'])
+            machine['maxbet'] = int(r['# Coins'])  # credits
+            
+            # EPROMs and software versions are under multiple fields in Oasis
+            # we want to compress them to one JSON object, except BV and printer
+            eproms = dict()
+            eprom_fields = (
+                'Eprom #1',
+                'Eprom #2',
+                'Eprom #3',
+                'Eprom #4',
+                'Game Software',
+                'Base Software',
+                'OS Software',
+                'Video Software',
+                'Sound Software',
+                'Eprom 6',
+                'Boot Eprom',
+                'SPC Version',
+                'Jurisdiction Software',
+                'Game Software 2',
+                'Game Software 3',
+                'Game Software 4',
+                'Game Software 5',
+                'OS Software 2',
+                'OS Software 3',
             )
+            for field in eprom_fields:
+                if r[field]:
+                    eproms[field] = r[field]
+            machine['eproms'] = json.dumps(eproms)
+            
+            machine['paytable'] = r['Paytable']
+            machine['progressive'] = r['Prog %']  # TODO parse this?
+            machine['type_code'] = int(r['Slot Type ID'])
+            machine['style'] = r['Basic Style']
+            machine['mftr'] = r['Mftr']
+            machine['model'] = r['Model']
+            machine['cabinet'] = r['Cabinet']
+            machine['color'] = r['Color/Laminate']
+            
+            # DOM like mm/dd/yyyy
+            machine['mftr_date'] = datetime.strptime(r['DOM'], '%m/%d/%Y')
+            
+            machine['serial_num'] = r['SerialNumber']
+            machine['seal_num'] = int(r['SealNumber'])
+            
+            machine['multi_denom'] = True if r['Multi Denom'] == 'Y' else False
+            machine['multi_game'] = True if r['Multi Game'] == 'Y' else False
+            
+            # Commonly used: I100 SS and iVision with various casing
+            # UBA and WBA always like UBA10 03
+            machine['bv_model'] = 'iVizion' if r['BV Eprom'].lower().startswith('i') else r['BV Eprom']
+            machine['bv_firmware'] = r['BV ID #']
+            
+            machine['printer_model'] = r['Printer Type']
+            machine['printer_firmware'] = r['Printer Firmware']
+            machine['board_level'] = r['Board Level']
+            
+            db.all_machines.update_or_insert(db.all_machines.smid == machine['smid'], **machine)
             
             
 def list_files(ftype='csv'):
@@ -107,23 +187,22 @@ def setup_db():
         Field('slot_num', 'integer', required=True),
         Field('loc_casino', 'integer'),
         Field('loc_row'),
-        Field('oid_poller', 'integer'),
         Field('oid_dpu', 'integer'),
         Field('oid_box', 'integer'),
-        Field('acct_denom', 'float', required=True, default=0.01),
+        Field('acct_denom', 'double', required=True, default=0.01),
         Field('mktg_id'),
-        Field('md_denoms'),
-        Field('par', 'float'),
+        Field('md_denoms', 'list:double'),
+        Field('par', 'double'),
         Field('description'),
+        Field('game_series'),
         Field('paylines', 'integer'),
         Field('reels', 'integer'),
         Field('maxbet', 'integer'),
         Field('eproms', 'json'),
         Field('paytable'),
         Field('progressive'),
-        Field('notes', 'text'),
         Field('type_code', 'integer'),
-        Field('style', default='V'),
+        Field('style', default='V', length=1),
         Field('mftr'),
         Field('model'),
         Field('cabinet'),
@@ -137,6 +216,7 @@ def setup_db():
         Field('bv_firmware', required=True),
         Field('printer_model', required=True),
         Field('printer_firmware', required=True),
+        Field('board_level'),
     )
     db.define_table('conversions',
         Field('conv_date', 'date', default=datetime.today(), required=True),
@@ -163,6 +243,12 @@ def setup_db():
         Field('machine', 'reference all_machines', required=True),
         Field('tech_name', 'reference tech_names'),
         Field('pm_code', 'integer', required=True),
+    )
+    db.define_table('machine_notes',
+        Field('note_added', 'datetime', required=True, default=datetime.today()),
+        Field('machine', 'reference all_machines', required=True),
+        Field('added_by', 'reference tech_names', required=True),
+        Field('note', 'text'),
     )
     
     return db
