@@ -46,12 +46,13 @@ class MachineCmd(cmd.Cmd):
         m = self.machine
         
         choice = args.upper() if args else ''
-        while choice not in 'BMEX':
+        while not choice or choice not in 'BMCEX':
             print("\nView what?")
             print("==========\n")
             
             print("B - Basic info (machine number, smid, location...)")
             print("M - Manufacturing info (serial, vendor, DOM...)")
+            print("C - Configuration (par, paytable, max bet...)")
             print("E - Eproms")
             
             print("\nX - Return to machine commands")
@@ -59,16 +60,53 @@ class MachineCmd(cmd.Cmd):
             choice = input('??? ').upper()
             
         if choice == 'B':
+            # Machine number
+            # Slot Master ID
+            # Seal/asset number
+            # Location
+            # DPU and box
             print('\n\x1b[32;1m' + m.description + '\x1b[0m')
             print('-' * len(m.description))
-            print("Machine number: \x1b[32;1m%i\t\x1b[0mSMID: \x1b[32;1m%i\t\x1b[0mSeal number: \x1b[32;1m%i\x1b[0m" % (m.slot_num, m.smid, m.seal_num))
-            print("Location: \x1b[32;1m%s\t\x1b[0mDPU: \x1b[32;1m%i\t\t\x1b[0mSentinel: \x1b[32;1m%i\n\x1b[0m" % (m.loc_row, m.oid_dpu, m.oid_box))
+            
+            rows = []
+            rows.append(['slot_num', 'smid', 'seal_num'])
+            rows.append(['loc_row', 'oid_dpu', None, 'oid_box'])
+            display_record(m, rows)
             
         elif choice == 'M':
+            # Serial number
+            # Manufacturer/vendor
+            # Manufacture date
+            # Game style (video or reel)
+            # Model name
+            # Cabinet style (flat, upright, slant, novelty, etc.)
+            # Cabinet color
             print('\n\x1b[32;1m' + m.description + '\x1b[0m')
             print('-' * len(m.description))
-            print("Serial number: \x1b[32;1m%s\t\x1b[0mVendor: \x1b[32;1m%s\t\x1b[0mDOM: \x1b[32;1m%s\x1b[0m" % (m.serial_num, m.mftr, m.mftr_date))
-            print("Style: \x1b[32;1m%s\t\x1b[0mModel: \x1b[32;1m%s\t\x1b[0mCabinet: \x1b[32;1m%s\t\x1b[0mColor: \x1b[32;1m%s\n\x1b[0m" % (m.style, m.model, m.cabinet, m.color))
+            
+            rows = []
+            rows.append(['serial_num', 'mftr', 'mftr_date'])
+            rows.append(['style', 'model', 'cabinet', 'color'])
+            display_record(m, rows)
+            
+        elif choice == 'C':
+            # Accounting denom
+            # Multidenom denoms
+            # Par
+            # Number of paylines
+            # Max bet
+            # Paytable
+            # Progressive info
+            # Type code
+            # Multigame flag
+            print('\n\x1b[32;1m' + m.description + '\x1b[0m')
+            print('-' * len(m.description))
+            
+            rows = []
+            rows.append(['type_code', 'acct_denom', 'md_denoms'])
+            rows.append(['paytable', 'par', 'maxbet', 'paylines'])
+            rows.append(['progressive', None, 'multi_game'])
+            display_record(m, rows)
             
         elif choice == 'E':
             print('\n\x1b[32;1m' + m.description + '\x1b[0m')
@@ -194,7 +232,47 @@ Usage:
 
 
 def get_one(db_set):
-    return db_set.select().first()
+    """Retrieve and render the first row of a set"""
+    rows = db_set.select()
+    this_row = rows.render(0)
+    this_row._db = rows.db
+    
+    # get original field objects for labels, type, etc.
+    this_row._fields = dict()
+    for col in rows.colnames:
+        table, field = col.split('.')
+        table = table.strip('"')
+        field = field.strip('"')
+        this_row._fields[field] = this_row._db[table][field]
+        
+    return this_row
+    
+    
+def display_record(src, fmt, data_color='\x1b[32;1m', label_color='\x1b[0m', sep=':'):
+    """
+    Select and display given fields of a single record.
+    
+    `src` is the source data as a pydal Row object.
+    `fmt` is a list of lists, where each sublist is a display row containing keys into `src`
+    
+    `data_color` is an ANSI escape sequence for coloring data (default bright green)
+    `label_color` is an ANSI escape sequence for coloring the labels (default white)
+    `sep` is the separator between label and data
+    
+    For each display row, this function will use each item as a key in `src` and display
+    `src[item].label` and `src[item]` separated by `sep` and a space. If `item` is None,
+    then it will insert an extra tab character.
+    """
+    
+    for r in fmt:
+        disp_row = ''
+        for k in r:
+            if k is not None:
+                label = src._fields[k].label
+                disp_row += label_color + label + sep + ' '
+                disp_row += data_color + str(src[k])
+            disp_row += '\t'
+        print(disp_row, '\x1b[0m')
 
     
 def import_machines(db, f):
@@ -336,42 +414,53 @@ def setup_db():
     
     db = DAL("sqlite://poorbart.db", folder=r"U:\floor_data")
     
+    def rows_render(f, v, r):
+        # why the fuck isn't this in the base DAL already?
+        # it's in the unit tests instead
+        if callable(f.represent):
+            return f.represent(v, r)
+        else:
+            return str(v)
+    
+    # required for rows.render() to use fields' represent attribute
+    db.representers['rows_render'] = rows_render
+    
     db.define_table('all_machines',
-        Field('on_floor', 'boolean', required=True),
-        Field('smid', 'integer', required=True, unique=True),
-        Field('slot_num', 'integer', required=True),
-        Field('loc_casino', 'integer'),
-        Field('loc_row'),
-        Field('oid_dpu', 'integer'),
-        Field('oid_box', 'integer'),
-        Field('acct_denom', 'double', required=True, default=0.01),
-        Field('mktg_id'),
-        Field('md_denoms', 'list:double'),
-        Field('par', 'double'),
-        Field('description'),
-        Field('game_series'),
-        Field('paylines', 'integer'),
-        Field('reels', 'integer'),
-        Field('maxbet', 'integer'),
+        Field('on_floor', 'boolean', required=True, label='On floor', represent=lambda v,r: 'Y' if v else 'N'),
+        Field('smid', 'integer', required=True, unique=True, label='SMID'),
+        Field('slot_num', 'integer', required=True, label='Machine number'),
+        Field('loc_casino', 'integer', label='Casino', represent=lambda v,r: '%02i'%v),
+        Field('loc_row', label='Row'),
+        Field('oid_dpu', 'integer', label='DPU'),
+        Field('oid_box', 'integer', label='Sentinel'),
+        Field('acct_denom', 'double', required=True, default=0.01, label='Meter denom', represent=lambda v,r: '$%#.2f'%v),
+        Field('mktg_id', label='Marketing ID'),
+        Field('md_denoms', 'list:double', label='Denoms', represent=lambda v,r: ' '.join(['%#.2f'%i for i in v])),
+        Field('par', 'double', label='Par', represent=lambda v,r: '%#.3f%%'%v),
+        Field('description', label='Theme'),
+        Field('game_series', label='Game series'),
+        Field('paylines', 'integer', label='Paylines'),
+        Field('reels', 'integer', label='Reels'),
+        Field('maxbet', 'integer', label='Max bet'),
         Field('eproms', 'json'),
-        Field('paytable'),
-        Field('progressive'),
-        Field('type_code', 'integer'),
-        Field('style', default='V', length=1),
-        Field('mftr'),
-        Field('model'),
-        Field('cabinet'),
-        Field('color'),
-        Field('mftr_date'),
-        Field('serial_num', required=True),
-        Field('seal_num', 'integer'),
-        Field('multi_denom', 'boolean', required=True),
-        Field('multi_game', 'boolean', required=True),
-        Field('bv_model', required=True),
-        Field('bv_firmware', required=True),
-        Field('printer_model', required=True),
-        Field('printer_firmware', required=True),
-        Field('board_level'),
+        Field('paytable', label='Paytable'),
+        Field('progressive', label='Progressive'),
+        Field('type_code', 'integer', label='Type code'),
+        Field('style', default='V', length=1, label='Game style'),
+        Field('mftr', label='Vendor'),
+        Field('model', label='Model'),
+        Field('cabinet', label='Cabinet style'),
+        Field('color', label='Color'),
+        Field('mftr_date', label='DOM'),
+        Field('serial_num', required=True, label='Serial number'),
+        Field('seal_num', 'integer', label='Seal number'),
+        Field('multi_denom', 'boolean', required=True, label='Multidenom', represent=lambda v,r: 'Y' if v else 'N'),
+        Field('multi_game', 'boolean', required=True, label='Multigame', represent=lambda v,r: 'Y' if v else 'N'),
+        Field('bv_model', required=True, label='BV model'),
+        Field('bv_firmware', required=True, label='BV firmware'),
+        Field('printer_model', required=True, label='Printer model'),
+        Field('printer_firmware', required=True, label='Printer firmware'),
+        Field('board_level', label='Board level'),
     )
     db.define_table('conversions',
         Field('conv_date', 'date', default=datetime.today(), required=True),
