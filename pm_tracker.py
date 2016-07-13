@@ -4,6 +4,8 @@ import cmd
 import sys
 import os
 import csv
+import json
+import os.path
 
 import colorama as col
 from pydal import DAL, Field
@@ -124,7 +126,7 @@ class PoorBart(cmd.Cmd):
     intro = "Welcome to a poor substitute for Oasis BlackBart\n"
     
     def preloop(self):
-        db = setup_db()
+        db = setup_db(self.data_dir)
         self.on_floor = db(db.all_machines.on_floor == True).count()
         self.intro = self.intro + "%i machines currently on the floor.\n" % self.on_floor
         self.db = db
@@ -408,11 +410,11 @@ def list_files(ftype='csv'):
     return files
 
 
-def setup_db():
+def setup_db(data_dir):
     cwd = os.getcwd()
-    os.chdir(r"U:\floor_data")
+    os.chdir(data_dir)
     
-    db = DAL("sqlite://poorbart.db", folder=r"U:\floor_data")
+    db = DAL("sqlite://poorbart.db", folder=data_dir)
     
     def rows_render(f, v, r):
         # why the fuck isn't this in the base DAL already?
@@ -499,6 +501,11 @@ def setup_db():
         
         
 if __name__ == '__main__':
+    if os.path.isfile('pm_config.conf'):
+        data_dir = json.loads(open('pm_config.conf').read())['data_dir']
+    else:
+        data_dir = 'U:\floor_data'
     col.init()
     bart = PoorBart()
+    bart.data_dir = data_dir
     bart.cmdloop()
