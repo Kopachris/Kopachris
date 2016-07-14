@@ -30,7 +30,7 @@ class MachineCmd(cmd.Cmd):
             self.close()
             return
         
-        self.prompt = "(machine) %i >> " % self.machine.slot_num
+        self.prompt = "(machine) \x1b[32;1m%i\x1b[0m >> " % self.machine.slot_num
     
     def postcmd(self, stop, line):
         if self.stop:
