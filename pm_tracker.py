@@ -186,6 +186,38 @@ Usage:
         machine_cmd.machine = this_machine
         machine_cmd.db = db
         machine_cmd.cmdloop()
+        
+    def do_search(self, args):
+        """Search for machines by description."""
+        
+        if not args:
+            print("No search term specified!")
+            return
+        
+        db = self.db
+        machs = db.all_machines
+        
+        # split search term into individual words and create db query
+        search_terms = args.split()
+        q = machs.description.contains(search_terms[0])
+        if len(search_terms) > 1:
+            for term in search_terms[1:]:
+                # query should return machines containing any term in description
+                q |= machs.description.contains(term)
+                
+        results = db(q).select(machs.slot_num, machs.loc_row, machs.description)
+        
+        if not len(results):
+            print("No results")
+            return
+        
+        # TODO rank/sort by number of terms present?
+        
+        print("Machine\t\tRow\t\tDescription")
+        print("-------\t\t---\t\t-----------")
+        
+        for r in results:
+            print("%i\t\t%s\t\t%s" % (r.slot_num, r.loc_row, r.description))
     
     def do_import(self, args):
         """Import .csv files to the database."""
