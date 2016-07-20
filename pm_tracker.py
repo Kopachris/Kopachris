@@ -30,7 +30,7 @@ class MachineCmd(cmd.Cmd):
             self.close()
             return
         
-        self.prompt = "(machine) \x1b[32;1m%i\x1b[0m >> " % self.machine.slot_num
+        self.prompt = "(machine) %i >> " % self.machine.slot_num
     
     def postcmd(self, stop, line):
         if self.stop:
@@ -139,6 +139,8 @@ class PoorBart(cmd.Cmd):
     def do_exit(self, args):
         sys.exit()
         
+    do_quit = do_exit
+        
     def do_machine(self, args):
         """
 Select a machine that's on the floor and enter machine commands
@@ -244,8 +246,8 @@ Usage:
     def do_addtech(self, args):
         """Add a new technician to the database."""
         
-        print("Create new technician")
-        print("=====================\n")
+        print("Add new technician")
+        print("==================\n")
         
         sn, fn = '', ''
         while not sn:
@@ -261,12 +263,78 @@ Usage:
             print("Added new technician, id #%i" % id)
         except:
             print("Could not add new technician or technician already exists with that short name.")
+    
+    def do_setarea(self, args):
+        """Set PM area for a tech"""
+        
+        db = self.db
+        
+        while not args:
+            args = input("Which tech? ")
             
-    do_quit = do_exit
+        tech = get_one(db(db.tech_names.short_name == args))
+        if tech is None:
+            print("Tech not found.")
+            return
+            
+        pm_rows = ''
+        while not pm_rows:
+            pm_rows = input("Enter rows assigned to this tech, separated by commas: ").split(',')
+            
+        # first clear currently assigned rows
+        area = db(db.pm_areas.tech_name == tech.id)
+        if not area.isempty():
+            area = area.select()
+            for r in area:
+                r.delete_record()
+                
+            db.commit()
+        
+        # then add rows
+        db.pm_areas.bulk_insert([{'tech_name': tech.id, 'row': r} for r in pm_rows])
+        db.commit()
+        print("Done.")
+        
+    def do_get_nonexist(self, args):
+        """Generate a report of rows which are assigned to a tech but don't actually exist."""
+        
+        db = self.db
+        
+        pm_areas = db().select(db.pm_areas.ALL)
+        nonexist = []
+        for r in pm_areas:
+            if db(db.all_machines.loc_row.startswith(r.row)).isempty():
+                nonexist.append(r.row)
+                
+        print("These rows are assigned but no longer exist:")
+        print(', '.join(nonexist))
+        
+    def do_get_unassigned(self, args):
+        """Generate a report of rows which aren't assigned to anyone."""
+        
+        db = self.db
+        
+        all_machines = db(db.all_machines.on_floor == True).select(db.all_machines.loc_row)
+        all_rows = set()
+        for m in all_machines:
+            all_rows.add(m.loc_row.rsplit('-', maxsplit=1)[0])
+            
+        unassigned = []
+        for r in all_rows:
+            if db(db.pm_areas.row == r).isempty():
+                unassigned.append(r)
+                
+        unassigned.sort()
+        print("These rows are not assigned to anyone:")
+        print(', '.join(unassigned))
 
 
 def get_one(db_set):
     """Retrieve and render the first row of a set"""
+    
+    if db_set.isempty():
+        return None
+    
     rows = db_set.select()
     this_row = rows.render(0)
     this_row._db = rows.db
@@ -536,8 +604,9 @@ if __name__ == '__main__':
     if os.path.isfile('pm_config.conf'):
         data_dir = json.loads(open('pm_config.conf').read())['data_dir']
     else:
-        data_dir = 'U:\floor_data'
+        data_dir = 'U:\\floor_data'
     col.init()
     bart = PoorBart()
     bart.data_dir = data_dir
     bart.cmdloop()
+
