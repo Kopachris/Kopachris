@@ -10,6 +10,7 @@ import os.path
 import colorama as col
 from pydal import DAL, Field
 from datetime import datetime
+from dateutil.parser import parse as parse_dt
 from pathlib import Path
 
 
@@ -42,14 +43,13 @@ class MachineCmd(cmd.Cmd):
     def do_back(self, args):
         self.stop = True
         
-    def do_view(self, args):
+    def do_view(self, args, show_menu=True):
         """View machine info"""
         
         m = self.machine
         c = self.cabinet
         
-        choice = args.upper() if args else ''
-        while not choice or choice not in 'BMCEHX':
+        if show_menu:
             print("\nView what?")
             print("==========\n")
             
@@ -60,7 +60,9 @@ class MachineCmd(cmd.Cmd):
             print("H - History")
             
             print("\nX - Return to machine commands")
-            
+        
+        choice = args.upper() if args else ''
+        while not choice or choice not in 'BMCEHX':
             choice = input('??? ').upper()
             
         if choice == 'B':
@@ -77,6 +79,8 @@ class MachineCmd(cmd.Cmd):
             rows.append(['loc_row', 'oid_dpu', None, 'oid_box'])
             display_record(m, rows)
             
+            return 'B'
+            
         elif choice == 'M':
             # Serial number
             # Manufacturer/vendor
@@ -92,6 +96,8 @@ class MachineCmd(cmd.Cmd):
             rows.append(['serial_num', 'mftr', 'mftr_date'])
             rows.append(['model', 'cabinet', 'color'])
             display_record(c, rows)
+            
+            return 'M'
             
         elif choice == 'C':
             # Accounting denom
@@ -112,6 +118,8 @@ class MachineCmd(cmd.Cmd):
             rows.append(['progressive', None, 'multi_game'])
             display_record(m, rows)
             
+            return 'C'
+            
         elif choice == 'E':
             print('\n\x1b[32;1m' + m.description + '\x1b[0m')
             print('-' * len(m.description))
@@ -120,20 +128,23 @@ class MachineCmd(cmd.Cmd):
                 print("%s: \x1b[32;1m%s\x1b[0m" % (k, v))
             print('')
             
+            return 'E'
+            
         elif choice == 'H':
             db = self.db
             cons = db.conversions
             moves = db.moves
             pms = db.pm_activity
+            techs = db.tech_names
             
             con_to = db(cons.old_num == m.slot_num).select().first()
             con_from = db(cons.new_num == m.slot_num).select().first()
             
             moves = db(moves.machine == m.id).select()
             
-            last_200 = db((pms.pm_code == 200) & (pms.machine == m.id)).select().last()
-            last_201 = db((pms.pm_code == 201) & (pms.machine == m.id)).select().last()
-            last_203 = db((pms.pm_code == 203) & (pms.machine == m.id)).select().last()
+            last_200 = db((pms.pm_code == 200) & (pms.machine == m.cabinet)).select().last()
+            last_201 = db((pms.pm_code == 201) & (pms.machine == m.cabinet)).select().last()
+            last_203 = db((pms.pm_code == 203) & (pms.machine == m.cabinet)).select().last()
             
             print('\n\x1b[32;1m' + m.description + '\x1b[0m')
             print('-' * len(m.description))
@@ -161,25 +172,30 @@ class MachineCmd(cmd.Cmd):
                     print("Moved from %s to %s on %s" % (move.old_loc, move.new_loc, move.move_date))
                     
             if last_200:
-                print("Last PM3 was on %s by %s" % (last_200.code_date, last_200.tech_name))
+                tech = db(techs.id == last_200.tech_name).select().first()
+                print("Last PM3 was on %s by %s" % (last_200.code_date, tech.full_name))
             else:
                 print("No PM3's")
                 
             if last_201:
-                print("Last PM2 was on %s by %s" % (last_201.code_date, last_201.tech_name))
+                tech = db(techs.id == last_201.tech_name).select().first()
+                print("Last PM2 was on %s by %s" % (last_201.code_date, tech.full_name))
             else:
                 print("No PM2's")
                 
             if last_203:
-                print("Last button check was on %s by %s" % (last_203.code_date, last_203.tech_name))
+                tech = db(techs.id == last_203.tech_name).select().first()
+                print("Last button check was on %s by %s" % (last_203.code_date, tech.full_name))
             else:
                 print("No button checks")
                 
             # clear formatting
             print('\x1b[0m')
             
+            return 'H'
+            
         elif choice == 'X':
-            return
+            return 'X'
 
 
 class PoorBart(cmd.Cmd):
@@ -251,7 +267,10 @@ Usage:
         machine_cmd.machine = this_machine
         machine_cmd.cabinet = this_cabinet
         machine_cmd.db = db
-        machine_cmd.do_view('')
+        
+        choice = ''
+        while choice != 'X':
+            choice = machine_cmd.do_view('', show_menu=False if choice else True)
         
     def do_search(self, args):
         """Search for machines by description."""
@@ -345,8 +364,8 @@ Usage:
         print("I - machine info")
         print("M - maintenance log")
         
-        choice = ''
-        while choice not in ('I', 'M'):
+        choice = 'X'
+        while choice not in 'IM':
             choice = input('??? ').upper()
             
         if choice == 'I':
@@ -355,7 +374,12 @@ Usage:
             r_added, r_updated = import_machines(self.db, files[file_idx])
             
             print("Added %i and updated %i machines" % (r_added, r_updated))
+        elif choice == 'M':
+            files = list_files()
+            file_idx = int(input("Which file? ")) - 1
+            r_added = import_maint(self.db, files[file_idx])
             
+            print("Added %i maintenance records" % r_added)
     
     def do_addtech(self, args):
         """Add a new technician to the database."""
@@ -377,6 +401,33 @@ Usage:
             print("Added new technician, id #%i" % id)
         except:
             print("Could not add new technician or technician already exists with that short name.")
+            
+    def do_edittech(self, args):
+        """Edit an existing technician."""
+        
+        db = self.db
+        
+        while not args:
+            args = input("Existing tech short name: ")
+            
+        existing_tech = db(db.tech_names.short_name.like(args)).select().first()
+        
+        if existing_tech:
+            print("Current short name: ", existing_tech.short_name)
+            print("Current full name: ", existing_tech.full_name)
+            print("Current nickname: ", existing_tech.nickname)
+        else:
+            print("Tech not found.")
+            return
+            
+        new_sn = input("New short name? ") or existing_tech.short_name
+        new_fn = input("New full name? ") or existing_tech.full_name
+        new_nick = input("New nickname? ") or existing_tech.nickname
+        
+        existing_tech.update_record(short_name=new_sn, full_name=new_fn, nickname=new_nick)
+        db.commit()
+        
+        print("Updated.")
     
     def do_setarea(self, args):
         """Set PM area for a tech"""
@@ -490,6 +541,44 @@ def display_record(src, fmt, data_color='\x1b[32;1m', label_color='\x1b[0m', sep
             disp_row += '\t'
         print(disp_row, '\x1b[0m')
 
+    
+def import_maint(db, f):
+    """
+    Import maintenance log from a .csv file into the database.
+    
+    Args:
+        db - DAL object
+        f - Path object of the .csv file
+    """
+    
+    with f.open() as csvfile:
+        csvreader = csv.DictReader(csvfile)
+        updated_rows = 0
+        machs = db.all_machines
+        cabs = db.cabinets
+        pms = db.pm_activity
+        techs = db.tech_names
+        
+        for r in csvreader:
+            dt = parse_dt(r['Datetime'])
+            m = int(r['Machine'])
+            code = int(r['Code'])
+            tech = db(techs.full_name == r['User Name']).select().first()
+            cab = db(machs.slot_num == m).select(machs.cabinet).first()
+            
+            q = pms.code_date == dt
+            q &= pms.machine == m
+            q &= pms.pm_code == code
+            new_row = db(q).isempty()
+            
+            if new_row and tech and cab:
+                # if record already exists or tech not found, skip
+                pms.insert(code_date=dt, machine=cab.cabinet, tech_name=tech.id, pm_code=code)
+                db.commit()
+                updated_rows += 1
+                
+        return updated_rows
+    
     
 def import_machines(db, f):
     """
@@ -714,7 +803,7 @@ def setup_db(data_dir):
     )
     db.define_table('pm_activity',
         Field('code_date', 'datetime', required=True),
-        Field('machine', 'reference all_machines', required=True),
+        Field('machine', 'reference cabinets', required=True),
         Field('tech_name', 'reference tech_names'),
         Field('pm_code', 'integer', required=True),
     )
