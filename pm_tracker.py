@@ -46,6 +46,7 @@ class MachineCmd(cmd.Cmd):
         """View machine info"""
         
         m = self.machine
+        c = self.cabinet
         
         choice = args.upper() if args else ''
         while not choice or choice not in 'BMCEX':
@@ -88,8 +89,8 @@ class MachineCmd(cmd.Cmd):
             
             rows = []
             rows.append(['serial_num', 'mftr', 'mftr_date'])
-            rows.append(['style', 'model', 'cabinet', 'color'])
-            display_record(m, rows)
+            rows.append(['model', 'cabinet', 'color'])
+            display_record(c, rows)
             
         elif choice == 'C':
             # Accounting denom
@@ -157,6 +158,7 @@ Usage:
         """
 
         machs = self.db.all_machines
+        cabs = self.db.cabinets
         db = self.db
         q = (machs.on_floor == True)
         
@@ -183,9 +185,12 @@ Usage:
         if not this_machine:
             print("Machine not found")
             return
+            
+        this_cabinet = get_one(db(cabs.id == this_machine.cabinet))
         
         machine_cmd = MachineCmd()
         machine_cmd.machine = this_machine
+        machine_cmd.cabinet = this_cabinet
         machine_cmd.db = db
         machine_cmd.cmdloop()
         
@@ -391,6 +396,7 @@ def import_machines(db, f):
         updated_rows = 0
         inserted_rows = 0
         machs = db.all_machines
+        cabs = db.cabinets
         
         for r in csvreader:
             if not r['SlotMastID']: continue  # get around blank rows
@@ -402,7 +408,10 @@ def import_machines(db, f):
             else:
                 print('Importing machine ', r['SlotNumber'])
                 
+            existing_cab = db(cabs.serial_num == r['SerialNumber']).select().first()
+                
             machine = dict()
+            cabinet = dict()
             
             machine['on_floor'] = True if r['OnFloor'] == 'Y' else False
             
@@ -465,13 +474,19 @@ def import_machines(db, f):
             machine['progressive'] = r['Prog %']  # TODO parse this?
             machine['type_code'] = int(r['Slot Type ID'])
             machine['style'] = r['Basic Style']
-            machine['mftr'] = r['Mftr']
-            machine['model'] = r['Model']
-            machine['cabinet'] = r['Cabinet']
-            machine['color'] = r['Color/Laminate']
-            machine['mftr_date'] = r['DOM']
-            machine['serial_num'] = r['SerialNumber']
             machine['seal_num'] = int(r['SealNumber']) if r['SealNumber'].isnumeric() else None
+            
+            if existing_cab:
+                machine['cabinet'] = existing_cab.id
+            else:
+                cabinet['mftr'] = r['Mftr']
+                cabinet['model'] = r['Model']
+                cabinet['cabinet'] = r['Cabinet']
+                cabinet['color'] = r['Color/Laminate']
+                cabinet['mftr_date'] = r['DOM']
+                cabinet['serial_num'] = r['SerialNumber']
+                
+                machine['cabinet'] = cabs.insert(**cabinet)
             
             machine['multi_denom'] = True if r['Multi Denom'] == 'Y' else False
             machine['multi_game'] = True if r['Multi Game'] == 'Y' else False
@@ -527,6 +542,15 @@ def setup_db(data_dir):
     # required for rows.render() to use fields' represent attribute
     db.representers['rows_render'] = rows_render
     
+    db.define_table('cabinets',
+        Field('mftr', label='Vendor'),
+        Field('model', label='Model'),
+        Field('cabinet', label='Cabinet style'),
+        Field('color', label='Color'),
+        Field('mftr_date', label='DOM'),
+        Field('serial_num', required=True, label='Serial number', unique=True),
+    )
+    
     db.define_table('all_machines',
         Field('on_floor', 'boolean', required=True, label='On floor', represent=lambda v,r: 'Y' if v else 'N'),
         Field('smid', 'integer', required=True, unique=True, label='SMID'),
@@ -549,12 +573,7 @@ def setup_db(data_dir):
         Field('progressive', label='Progressive'),
         Field('type_code', 'integer', label='Type code'),
         Field('style', default='V', length=1, label='Game style'),
-        Field('mftr', label='Vendor'),
-        Field('model', label='Model'),
-        Field('cabinet', label='Cabinet style'),
-        Field('color', label='Color'),
-        Field('mftr_date', label='DOM'),
-        Field('serial_num', required=True, label='Serial number'),
+        Field('cabinet', 'reference cabinets', required=True),
         Field('seal_num', 'integer', label='Seal number'),
         Field('multi_denom', 'boolean', required=True, label='Multidenom', represent=lambda v,r: 'Y' if v else 'N'),
         Field('multi_game', 'boolean', required=True, label='Multigame', represent=lambda v,r: 'Y' if v else 'N'),
