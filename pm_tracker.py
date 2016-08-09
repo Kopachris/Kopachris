@@ -49,7 +49,7 @@ class MachineCmd(cmd.Cmd):
         c = self.cabinet
         
         choice = args.upper() if args else ''
-        while not choice or choice not in 'BMCEX':
+        while not choice or choice not in 'BMCEHX':
             print("\nView what?")
             print("==========\n")
             
@@ -57,6 +57,7 @@ class MachineCmd(cmd.Cmd):
             print("M - Manufacturing info (serial, vendor, DOM...)")
             print("C - Configuration (par, paytable, max bet...)")
             print("E - Eproms")
+            print("H - History")
             
             print("\nX - Return to machine commands")
             
@@ -118,6 +119,64 @@ class MachineCmd(cmd.Cmd):
             for k, v in m.eproms.items():
                 print("%s: \x1b[32;1m%s\x1b[0m" % (k, v))
             print('')
+            
+        elif choice == 'H':
+            db = self.db
+            cons = db.conversions
+            moves = db.moves
+            pms = db.pm_activity
+            
+            con_to = db(cons.old_num == m.slot_num).select().first()
+            con_from = db(cons.new_num == m.slot_num).select().first()
+            
+            moves = db(moves.machine == m.id).select()
+            
+            last_200 = db((pms.pm_code == 200) & (pms.machine == m.id)).select().last()
+            last_201 = db((pms.pm_code == 201) & (pms.machine == m.id)).select().last()
+            last_203 = db((pms.pm_code == 203) & (pms.machine == m.id)).select().last()
+            
+            print('\n\x1b[32;1m' + m.description + '\x1b[0m')
+            print('-' * len(m.description))
+            
+            rows = []
+            rows.append(['slot_num', 'smid', 'seal_num'])
+            rows.append(['loc_row', 'oid_dpu', None, 'oid_box'])
+            display_record(m, rows)
+            
+            # color yellow
+            print('\x1b[33;1m')
+            
+            if not con_to and not con_from:
+                print("No conversions")
+            else:
+                if con_to:
+                    print("Converted to %s on %s" % (con_to.new_num, con_to.conv_date))
+                if con_from:
+                    print("Converted from %s on %s" % (con_from.old_num, con_from.conv_date))
+                    
+            if not len(moves):
+                print("No moves")
+            else:
+                for move in moves:
+                    print("Moved from %s to %s on %s" % (move.old_loc, move.new_loc, move.move_date))
+                    
+            if last_200:
+                print("Last PM3 was on %s by %s" % (last_200.code_date, last_200.tech_name))
+            else:
+                print("No PM3's")
+                
+            if last_201:
+                print("Last PM2 was on %s by %s" % (last_201.code_date, last_201.tech_name))
+            else:
+                print("No PM2's")
+                
+            if last_203:
+                print("Last button check was on %s by %s" % (last_203.code_date, last_203.tech_name))
+            else:
+                print("No button checks")
+                
+            # clear formatting
+            print('\x1b[0m')
             
         elif choice == 'X':
             return
@@ -192,7 +251,7 @@ Usage:
         machine_cmd.machine = this_machine
         machine_cmd.cabinet = this_cabinet
         machine_cmd.db = db
-        machine_cmd.cmdloop()
+        machine_cmd.do_view('')
         
     def do_search(self, args):
         """Search for machines by description."""
