@@ -225,6 +225,56 @@ Usage:
         
         for r in results:
             print("%i\t\t%s\t\t%s" % (r.slot_num, r.loc_row, r.description))
+            
+    def do_move(self, args):
+        """Move existing machine to a new location"""
+        
+        db = self.db
+        
+        if not args.isnumeric():
+            machine = int(input("Machine number? "))
+        else:
+            machine = int(args)
+            
+        q = db.all_machines.on_floor == True
+        q &= db.all_machines.slot_num == machine
+        
+        m = get_one(db(q))
+        if not m:
+            print("Machine not found!")
+            return
+            
+        # display basic machine info
+        print('\n\x1b[32;1m' + m.description + '\x1b[0m')
+        print('-' * len(m.description))
+        
+        rows = []
+        rows.append(['slot_num', 'smid', 'seal_num'])
+        rows.append(['loc_row', 'oid_dpu', None, 'oid_box'])
+        display_record(m, rows)
+        print('')
+        
+        new_row = input("New location? ")
+        new_dpu = int(input("New DPU? "))
+        new_box = int(input("New box? "))
+        
+        if not new_row and not new_dpu and not new_box:
+            print("No changes made.")
+            return
+            
+        if new_row:
+            db.moves.insert(machine=m.id, new_loc=new_row, old_loc=m.loc_row)
+            m.update_record(loc_row=new_row)
+            
+        if new_dpu:
+            m.update_record(oid_dpu=new_dpu)
+            
+        if new_box:
+            m.update_record(oid_box=new_box)
+            
+        db.commit()
+        
+        print("Updated machine.")
     
     def do_import(self, args):
         """Import .csv files to the database."""
