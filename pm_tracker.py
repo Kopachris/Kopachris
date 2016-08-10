@@ -132,13 +132,14 @@ class MachineCmd(cmd.Cmd):
             
         elif choice == 'H':
             db = self.db
+            machs = db.all_machines
             cons = db.conversions
             moves = db.moves
             pms = db.pm_activity
             techs = db.tech_names
             
-            con_to = db(cons.old_num == m.slot_num).select().first()
-            con_from = db(cons.new_num == m.slot_num).select().first()
+            con_to = db(cons.old_num == m.id).select().first()
+            con_from = db(cons.new_num == m.id).select().first()
             
             moves = db(moves.machine == m.id).select()
             
@@ -161,9 +162,11 @@ class MachineCmd(cmd.Cmd):
                 print("No conversions")
             else:
                 if con_to:
-                    print("Converted to %s on %s" % (con_to.new_num, con_to.conv_date))
+                    to_machine = machs[con_to.new_num].slot_num
+                    print("Converted to %s on %s" % (to_machine, con_to.conv_date))
                 if con_from:
-                    print("Converted from %s on %s" % (con_from.old_num, con_from.conv_date))
+                    from_machine = machs[con_from.old_num].slot_num
+                    print("Converted from %s on %s" % (from_machine, con_from.conv_date))
                     
             if not len(moves):
                 print("No moves")
@@ -380,6 +383,156 @@ Usage:
             r_added = import_maint(self.db, files[file_idx])
             
             print("Added %i maintenance records" % r_added)
+            
+    def do_conversion(self, args):
+        """Convert a machine"""
+        
+        db = self.db
+        machs = db.all_machines
+        cons = db.conversions
+        old_m = ''
+        new_m = ''
+        
+        while not old_m.isnumeric():
+            old_m = input("Old Machine #? ")
+        old_m = int(old_m)
+        
+        old_machine = db(machs.slot_num == old_m)
+        if old_machine.isempty():
+            print("Old machine not in database.")
+            return
+            
+        old_machine = get_one(old_machine)
+        
+        # display basic machine info
+        print('\n\x1b[32;1m' + str(old_machine.description) + '\x1b[0m')
+        print('-' * len(str(old_machine.description)))
+        
+        rows = []
+        rows.append(['slot_num', 'smid', 'seal_num'])
+        rows.append(['loc_row', 'oid_dpu', None, 'oid_box'])
+        display_record(old_machine, rows)
+        print('')
+        
+        while not new_m.isnumeric():
+            new_m = input("New Machine #? ")
+        new_m = int(new_m)
+            
+        new_machine = db(machs.slot_num == new_m)
+        if new_machine.isempty():
+            # copy data from old machine
+            print("Copying old machine")
+            smid = int(input("New SMID? "))
+            
+            new_data = old_machine.as_dict()
+            
+            del new_data['id']
+            new_data['smid'] = smid
+            new_data['slot_num'] = new_m
+            
+            new_id = machs.insert(**new_data)
+        else:
+            new_id = get_one(new_machine).id
+        
+        old_id = old_machine.id
+        
+        conv_date = ''
+        while not conv_date:
+            try:
+                conv_date = parse_dt(input("Conversion date? "))
+            except ValueError:
+                print("Unable to parse date, try yyyy/mm/dd format")
+                conv_date = ''
+            
+        cons.insert(conv_date=conv_date, new_num=new_id, old_num=old_id)
+        db.commit()
+        print("Machine converted")
+            
+    def do_final(self, args):
+        """Take a machine off the floor"""
+        
+        db = self.db
+        machs = db.all_machines
+        finals = db.finals
+        
+        while not args.isnumeric():
+            args = input("Machine #? ")
+        args = int(args)
+        
+        machine = db((machs.slot_num == args) & (machs.on_floor == True))
+        if machine.isempty():
+            print("Machine not found.")
+            return
+            
+        machine = get_one(machine)
+            
+        # display basic machine info
+        print('\n\x1b[32;1m' + machine.description + '\x1b[0m')
+        print('-' * len(machine.description))
+        
+        rows = []
+        rows.append(['slot_num', 'smid', 'seal_num'])
+        rows.append(['loc_row', 'oid_dpu', None, 'oid_box'])
+        display_record(machine, rows)
+        print('')
+            
+        final_date = ''
+        while not final_date:
+            try:
+                final_date = parse_dt(input("Final date? "))
+            except ValueError:
+                print("Unable to parse date, try yyyy/mm/dd format")
+                final_date = ''
+        
+        machine.update_record(on_floor=False, loc_casino=0, loc_row='', oid_dpu=0, oid_box=0)
+        finals.insert(final_date=final_date, machine=machine.id)
+        
+        db.commit()
+        print("Machine taken off floor.")
+            
+    def do_addmachine(self, args):
+        """Manually add a machine to the database."""
+        
+        db = self.db
+        machs = db.all_machines
+        cabs = db.cabinets
+        
+        print("Add new machine")
+        print("===============\n")
+        
+        smid = slot_num = serial_num = ''
+        while not smid.isnumeric():
+            smid = input("Slot Master ID: ")
+        while not slot_num.isnumeric():
+            slot_num = input("Machine #: ")
+        while not serial_num:
+            serial_num = input("Serial number: ")
+            
+        smid = int(smid)
+        slot_num = int(slot_num)
+            
+        # get cabinet ID for that serial number if it exists,
+        # otherwise insert new cabinet
+        cab = db(cabs.serial_num == serial_num)
+        if cab.isempty():
+            cab_id = cabs.insert(serial_num=serial_num)
+        else:
+            cab_id = cab.select().first().id
+            
+        # can't have duplicate smid or machine number
+        chk_smid = db(machs.smid == smid).isempty()
+        chk_slot_num = db((machs.slot_num == slot_num) & (machs.on_floor == True)).isempty()
+        if not chk_smid:
+            print("Machine already exists with that SMID")
+            return
+        if not chk_slot_num:
+            print("Machine already exists on floor with that machine number")
+            return
+            
+        machs.insert(on_floor=False, smid=smid, slot_num=slot_num, cabinet=cab_id)
+        db.commit()
+        print("Added machine")
+        
     
     def do_addtech(self, args):
         """Add a new technician to the database."""
@@ -733,7 +886,10 @@ def setup_db(data_dir):
         # why the fuck isn't this in the base DAL already?
         # it's in the unit tests instead
         if callable(f.represent):
-            return f.represent(v, r)
+            try:
+                return f.represent(v, r) if v else str(v)
+            except TypeError:
+                return str(v)
         else:
             return str(v)
     
@@ -753,33 +909,33 @@ def setup_db(data_dir):
         Field('on_floor', 'boolean', required=True, label='On floor', represent=lambda v,r: 'Y' if v else 'N'),
         Field('smid', 'integer', required=True, unique=True, label='SMID'),
         Field('slot_num', 'integer', required=True, label='Machine number'),
-        Field('loc_casino', 'integer', label='Casino', represent=lambda v,r: '%02i'%v),
-        Field('loc_row', label='Row'),
-        Field('oid_dpu', 'integer', label='DPU'),
-        Field('oid_box', 'integer', label='Sentinel'),
+        Field('loc_casino', 'integer', label='Casino', default=0, represent=lambda v,r: '%02i'%v),
+        Field('loc_row', label='Row', default=''),
+        Field('oid_dpu', 'integer', label='DPU', default=0),
+        Field('oid_box', 'integer', label='Sentinel', default=0),
         Field('acct_denom', 'double', required=True, default=0.01, label='Meter denom', represent=lambda v,r: '$%#.2f'%v),
         Field('mktg_id', label='Marketing ID'),
         Field('md_denoms', 'list:double', label='Denoms', represent=lambda v,r: ' '.join(['%#.2f'%i for i in v])),
         Field('par', 'double', label='Par', represent=lambda v,r: '%#.3f%%'%v),
-        Field('description', label='Theme'),
-        Field('game_series', label='Game series'),
-        Field('paylines', 'integer', label='Paylines'),
-        Field('reels', 'integer', label='Reels'),
-        Field('maxbet', 'integer', label='Max bet'),
+        Field('description', label='Theme', default=''),
+        Field('game_series', label='Game series', default=''),
+        Field('paylines', 'integer', label='Paylines', default=1),
+        Field('reels', 'integer', label='Reels', default=3),
+        Field('maxbet', 'integer', label='Max bet', default=2),
         Field('eproms', 'json'),
-        Field('paytable', label='Paytable'),
-        Field('progressive', label='Progressive'),
-        Field('type_code', 'integer', label='Type code'),
+        Field('paytable', label='Paytable', default=''),
+        Field('progressive', label='Progressive', default=''),
+        Field('type_code', 'integer', label='Type code', default=0),
         Field('style', default='V', length=1, label='Game style'),
         Field('cabinet', 'reference cabinets', required=True),
         Field('seal_num', 'integer', label='Seal number'),
-        Field('multi_denom', 'boolean', required=True, label='Multidenom', represent=lambda v,r: 'Y' if v else 'N'),
-        Field('multi_game', 'boolean', required=True, label='Multigame', represent=lambda v,r: 'Y' if v else 'N'),
-        Field('bv_model', required=True, label='BV model'),
-        Field('bv_firmware', required=True, label='BV firmware'),
-        Field('printer_model', required=True, label='Printer model'),
-        Field('printer_firmware', required=True, label='Printer firmware'),
-        Field('board_level', label='Board level'),
+        Field('multi_denom', 'boolean', required=True, default=False, label='Multidenom', represent=lambda v,r: 'Y' if v else 'N'),
+        Field('multi_game', 'boolean', required=True, default=False, label='Multigame', represent=lambda v,r: 'Y' if v else 'N'),
+        Field('bv_model', label='BV model', default=''),
+        Field('bv_firmware', label='BV firmware', default=''),
+        Field('printer_model', label='Printer model', default=''),
+        Field('printer_firmware', label='Printer firmware', default=''),
+        Field('board_level', label='Board level', default=''),
     )
     db.define_table('conversions',
         Field('conv_date', 'date', default=datetime.today(), required=True),
@@ -791,6 +947,14 @@ def setup_db(data_dir):
         Field('machine', 'reference all_machines', required=True),
         Field('new_loc', required=True),
         Field('old_loc', required=True),
+    )
+    db.define_table('finals',
+        Field('final_date', 'date', default=datetime.today(), required=True),
+        Field('machine', 'reference all_machines', required=True),
+    )
+    db.define_table('installs',
+        Field('install_date', 'date', default=datetime.today(), required=True),
+        Field('machine', 'reference all_machines', required=True),
     )
     db.define_table('tech_names',
         Field('short_name', required=True, unique=True),
