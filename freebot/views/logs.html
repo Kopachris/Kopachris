@@ -1,0 +1,39 @@
+{{extend 'layout.html'}}
+{{=form}}
+{{if rows:}}
+
+<table style='font-family:monospace;'>
+{{for r in rows:}}
+    <tr>
+        <td style='width:15%;'><a href='#{{=r.id}}' id='{{=r.id}}'>*</a> {{=r.event_time.strftime('%x %X')}}</td>
+        <td style='word-break:break-all;'>
+    {{if r.event_type == 'PRIVMSG':}}
+        {{="<{}> {}".format(r.event_source, r.event_message)}}
+    {{elif r.event_type == 'QUIT':}}
+        {{="== {} ({}) has quit ({})".format(r.event_source, r.event_hostmask, r.event_message)}}
+    {{elif r.event_type == 'PART':}}
+        {{="== {} ({}) has left {} ({})".format(r.event_source, r.event_hostmask, r.event_target, r.event_message)}}
+    {{elif r.event_type == 'KICK':}}
+        {{params = r.event_message.split(' ', 1)}}
+        {{="== {} has been kicked from {} by {} ({})".format(params[0], r.event_target, r.event_source, params[1])}}
+    {{elif r.event_type == 'CTCP_ACTION':}}
+        {{=" * {} {}".format(r.event_source, r.event_message)}}
+    {{elif r.event_type == 'NICK':}}
+        {{="== {} is now known as {}".format(r.event_source, r.event_message)}}
+    {{elif r.event_type == 'JOIN':}}
+        {{="== {} ({}) has joined".format(r.event_source, r.event_hostmask)}}
+        {{pass}}
+            </td>
+        </tr>
+{{pass}}
+</table>
+
+    {{else:}}
+    <h3>
+        No logs available
+    </h3>
+    {{pass}}
+{{if 'lastsql' in locals():}}
+<hr />
+{{=PRE(lastsql)}}
+{{pass}}

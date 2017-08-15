@@ -1,0 +1,47 @@
+{{=f.custom.begin}}
+<style>
+    .w2p_list .string { width: 150px; }
+    #short_str .string { width: 150px; }
+</style>
+<table>
+    <tr>
+        <td><b>Module name: {{=f.custom.widget.name}}</b></td>
+        <td>Module enabled: {{=f.custom.widget.mod_enabled}}</td>
+        <td></td>
+    </tr>
+    <tr>
+        <td>Module description</td>
+        <td>Event type</td>
+        <td>Variables prefix</td>
+    </tr>
+    <tr>
+        <td>{{=f.custom.widget.description}}</td>
+        <td id="short_str">{{=f.custom.widget.event_type}}</td>
+        <td id="short_str">{{=f.custom.widget.vars_pre}}</td>
+    </tr>
+</table>
+<table>
+    <tr>
+        <td>Channels enabled</td>
+        <td>Channels disabled</td>
+        <td>Nicks enabled</td>
+        <td>Nicks disabled</td>
+    </tr>
+    <tr>
+        <td>{{=f.custom.widget.chans_en}}</td>
+        <td>{{=f.custom.widget.chans_dis}}</td>
+        <td>{{=f.custom.widget.nicks_en}}</td>
+        <td>{{=f.custom.widget.nicks_dis}}</td>
+    </tr>
+    <tr>
+        <td>
+            {{if 'delete' in locals():}}
+            Delete? {{=f.custom.delete}}
+            {{pass}}
+        </td>
+        <td></td>
+        <td></td>
+        <td>{{=f.custom.submit}}</td>
+    </tr>
+</table>
+{{=f.custom.end}}

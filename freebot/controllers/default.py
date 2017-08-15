@@ -1,0 +1,447 @@
+# -*- coding: utf-8 -*-
+# this file is released under public domain and you can use without limitations
+
+#########################################################################
+## This is a sample controller
+## - index is the default action of any application
+## - user is required for authentication and authorization
+## - download is for downloading files uploaded in the db (does streaming)
+## - call exposes all registered services (none by default)
+#########################################################################
+import os, bot_utils, signal, time, shutil
+from datetime import date, datetime, timedelta
+
+
+iso = '%Y-%m-%d'
+day = timedelta(days=1)
+
+
+@auth.requires_membership('admin')
+def index():
+    """
+    example action using the internationalization operator T and flash
+    rendered by views/default/index.html or views/generic.html
+
+    if you need a simple wiki simple replace the two lines below with:
+    return auth.wiki()
+    """
+    #response.flash = "Test"
+    #return auth.wiki()
+    redirect(URL('bot_admin'))
+    return dict()
+
+
+# def log():
+#     chan = request.vars.chan or 'brony'
+#     chan = '#' + chan
+#     yesterday = datetime.today() - timedelta(days=1)
+#     y = request.vars.y or yesterday.year
+#     m = request.vars.m or yesterday.month
+#     d = request.vars.d or yesterday.day
+#     y = int(y)
+#     m = int(m)
+#     d = int(d)
+#     start = datetime(y, m, d)
+#     rows = db((db.event_log.event_target == chan) &
+#               (db.event_log.event_type == 'PRIVMSG') &
+#               (db.event_log.event_time >= start)).select()
+#     return locals()
+
+@auth.requires_login()
+def log():
+    response.view = "logs.html"  # web2py editor won't let me edit stats/log.html for some reason?
+
+    #q = request.vars.q or False
+    start_date = request.vars.start_date or False
+    end_date = request.vars.end_date or False
+    #chan = request.vars.chan or 'brony'
+    chan = 'HotelReddit'
+    #user = request.vars.user or False
+
+    today = date.today()
+    yesterday = today - day
+    tomorrow = today + day
+
+    if not start_date and not end_date:
+        # default to just the past 24 hrs
+        start_date = today
+        end_date = today
+    elif not start_date:
+        # default to end_date minus 24 hrs
+        start_date = end_date
+        end_date = datetime.strptime(end_date, iso)
+    elif not end_date:
+        # default to start_date plus 24 hrs
+        start_date = datetime.strptime(start_date, iso)
+        end_date = start_date + day
+    else:
+        # just parse dates as they are
+        end_date = datetime.strptime(end_date, iso)
+        start_date = datetime.strptime(start_date, iso)
+
+    form = FORM(TABLE(
+                      TR("Start date:", "End date:", ""),
+                      TR(INPUT(_name='start_date', _type='date', _value=start_date.strftime(iso)),
+                         INPUT(_name='end_date', _type='date', _value=end_date.strftime(iso)),
+                         SELECT('HotelReddit', _name='chan', value=chan),
+                         INPUT(_type='submit'))
+                      ), _method='get')
+
+    if end_date - start_date > timedelta(days=7):
+        response.flash = "Start and end dates must be within a week from each other"
+        rows = None
+        return locals()
+    if end_date < start_date:
+        response.flash = "Start date must be before end date"
+        rows = None
+        return locals()
+
+    chan = '#' + chan
+    msg_types = ('PRIVMSG', 'QUIT', 'JOIN', 'PART', 'KICK', 'CTCP_ACTION', 'NICK')
+    rows = db((db.event_log.event_target == chan) &
+              (db.event_log.event_type.belongs(msg_types)) &
+              (db.event_log.event_time >= start_date) &
+              (db.event_log.event_time <= end_date + day)).select()
+    #lastsql = db._lastsql
+
+    return locals()
+
+@auth.requires_login()
+def search():
+    #response.view = "logs.html"  # web2py editor won't let me edit stats/log.html for some reason?
+    log = db.event_log
+    results = None
+    
+    msg_types = ('PRIVMSG', 'QUIT', 'JOIN', 'PART', 'KICK', 'CTCP_ACTION', 'NICK')
+
+    q = request.vars.q or ""
+    start_date = request.vars.start_date or False
+    end_date = request.vars.end_date or False
+    #chan = request.vars.chan or 'hard-light'
+    user = request.vars.user or ""
+    chan = 'HotelReddit'
+
+    today = date.today()
+    yesterday = today - day
+    tomorrow = today + day
+
+    if not start_date and not end_date:
+        # default to just the past 24 hrs
+        start_date = today
+        end_date = today
+    elif not start_date:
+        # default to end_date minus 24 hrs
+        start_date = end_date
+        end_date = datetime.strptime(end_date, iso)
+    elif not end_date:
+        # default to start_date plus 24 hrs
+        start_date = datetime.strptime(start_date, iso)
+        end_date = start_date + day
+    else:
+        # just parse dates as they are
+        end_date = datetime.strptime(end_date, iso)
+        start_date = datetime.strptime(start_date, iso)
+
+    form = FORM(TABLE(
+                      TR("Start date:", "End date:"),
+                      TR(INPUT(_name='start_date', _type='date', _value=start_date.strftime(iso)),
+                         INPUT(_name='end_date', _type='date', _value=end_date.strftime(iso)),
+                         #SELECT('hard-light', 'scp', 'freespace', _name='chan', value=chan),
+                         ),
+                      ),
+                TABLE(TR("Restrict to user: ", INPUT(_name='user', _value=user), ""),
+                      TR("Search query: ", INPUT(_name='q', _value=q), INPUT(_type='submit'))
+                      ),
+                _method='get')
+
+    #if end_date - start_date > timedelta(days=7):
+        #response.flash = "Start and end dates must be within a week from each other"
+        #rows = None
+        #return locals()
+    if end_date < start_date:
+        response.flash = "Start date must be before end date"
+        rows = None
+        return locals()
+
+    chan = '#' + chan
+    if q:
+        q = '%%%s%%' % q
+        q_q = log.event_message.like(q)
+    else:
+        results = None
+        return locals()
+    if user:
+        user = '%%%s%%' % user
+        q_user = log.event_source.like(user)
+    else:
+        q_user = log.event_source != ''
+    rows = db((log.event_target == chan) &
+              (log.event_type == 'PRIVMSG') &
+              (log.event_time >= start_date) &
+              (log.event_time <= end_date + day) &
+              (q_q) & (q_user)
+              ).select()
+    if not rows.first():
+        results = None
+        return locals()
+    #all_privmsg = db((log.event_target == chan) &
+    #                 (log.event_type == 'PRIVMSG') &
+    #                 (log.event_time >= start_date - day) &
+    #                 (log.event_time <= end_date + (2 * day))
+    #                 ).select().as_list(storage_to_dict=False)
+    
+    results = [[]]
+    cur_result = 0
+    prev_r = rows[0]
+    for i, r in enumerate(rows):
+        all_privmsg = db((log.event_target == chan) &
+                         (log.event_type == 'PRIVMSG') &
+                         (log.event_time >= r.event_time - day) &
+                         (log.event_time <= r.event_time + day) &
+                         (log.id >= r.id - 200) &
+                         (log.id <= r.id + 200)
+                         ).select().as_list(storage_to_dict=False)
+        r_idx = all_privmsg.index(r)
+        prev_10 = all_privmsg[r_idx - 10:r_idx]
+        if prev_r in prev_10:  # guaranteed to be false for the first row
+            intervening_rows = db((log.event_target == chan) &
+                                  (log.event_type.belongs(msg_types)) &
+                                  (log.id > prev_r.id) &
+                                  (log.id <= r.id)
+                                  ).select()
+            results[cur_result] += intervening_rows
+            try:
+                id_limit = all_privmsg[r_idx + 10].id
+            except IndexError:
+                id_limit = all_privmsg[-1].id
+            next_10 = db((log.event_target == chan) &
+                         (log.event_type.belongs(msg_types)) &
+                         (log.id > r.id) &
+                         (log.id <= id_limit)
+                         ).select()
+        else:
+            if i > 0:
+                results[cur_result] += next_10
+                results.append([])
+                cur_result += 1
+            intervening_rows = db((log.event_target == chan) &
+                                  (log.event_type.belongs(msg_types)) &
+                                  (log.id >= prev_10[0].id) &
+                                  (log.id <= r.id)
+                                  ).select()
+            results[cur_result] += intervening_rows
+            try:
+                id_limit = all_privmsg[r_idx + 10].id
+            except IndexError:
+                id_limit = all_privmsg[-1].id
+            next_10 = db((log.event_target == chan) &
+                         (log.event_type.belongs(msg_types)) &
+                         (log.id > r.id) &
+                         (log.id <= id_limit)
+                         ).select()
+        prev_r = r
+
+    results[cur_result] += next_10
+
+    return locals()
+
+
+@auth.requires_membership('admin')
+def module_upload():
+    form = FORM(
+                INPUT(_name='upload', _type='file'),
+                INPUT(_name='existing'),
+                INPUT(_type='submit'),
+                )
+    out = dict(form=form)
+    if form.process().accepted:
+        modname = request.vars.existing
+        if not modname:
+            filename = request.vars.upload.filename
+            filename = os.path.basename(filename)
+            modname = filename.rsplit('.', 1)[0]
+            if not filename.endswith('.py'):
+                response.flash = "Module not a .py file"
+                return out
+            if len(db(db.bot_modules.name == modname).select()):
+                response.flash = "Module already exists"
+                return out
+            f = request.vars.upload.file
+            shutil.copyfileobj(f, open('applications/freebot/modules/'+filename, 'wb'))
+
+        new_mod = __import__(modname)
+        etype = 'PRIVMSG'
+        new_mod.init(db)
+        db.bot_modules.insert(name=modname,
+                              description=new_mod.description,
+                              vars_pre=new_mod.prefix,
+                              event_type=etype,
+                              )
+        del new_mod
+
+        session.modname = modname
+        redirect(URL('module_update'))
+    return out
+
+
+@auth.requires_membership('admin')
+def module_update():
+    if 'name' not in request.vars:
+        modname = session.modname or redirect(URL('module_upload'))
+    else:
+        modname = request.vars.name
+    this_mod = db(db.bot_modules.name == modname).select()
+    if this_mod is None:
+        redirect(URL('module_upload'))
+    this_mod = this_mod.first()
+    f=SQLFORM(db.bot_modules, this_mod, deletable=True)
+    delete = 0  # view checks if this is in locals() before making the 'delete' checkbox
+    modname = modname + '.py'
+    if f.validate():
+        if f.deleted:
+            old_mod = __import__(this_mod.name)
+            old_mod.remove(db)
+            db(db.bot_vars.tbl_k.startswith(this_mod.vars_pre)).delete()
+            db(db.bot_modules.name==this_mod.name).delete()
+            del old_mod
+            response.flash = "Module removed"
+        else:
+            this_mod.update_record(**dict(f.vars))
+            response.flash = "Module updated"
+    return locals()
+
+
+@auth.requires_membership('wheel')
+def bot_admin():
+    """
+    BotenAlfred admin panel
+
+    Will display whether or not bot is running (if pid exists and os.getpgid(pid)
+    (getpgid() will raise OSError if process doesn't exist)
+    Will give option to start bot if not running, stop bot if running (link to bot/default/bot_start or bot/default/bot_stop)
+    List all modules with edit button next to each (link to bot/default/bot_module/id)
+    List current bot configuration (server, port, channels, nickname, etc.), provide edit button (link to /bot/default/bot_edit)
+    """
+    ## Modules
+    #modules = list()
+    #for r in db().select(db.bot_modules.ALL):
+        #form = SQLFORM(db.bot_modules, r, formstyle='table3cols')
+        #if form.process().accepted:
+            #response.flash = "Module updated"
+        #modules.append(form)
+        
+    modules = db().select(db.bot_modules.ALL)
+    
+    sets = dict(bot_settings=SQLTABLE(db().select(db.bot_vars.ALL)),
+                modules=modules)
+    
+    ## start/stop
+    if len(request.args) and request.args[0] == 'start':
+        bot_pid = int(bot_utils.get_item('pid', db))
+        if bot_pid:
+            try:
+                if os.getpgid(bot_pid):
+                    # bot already running
+                    response.flash = "Bot already running"
+                    return sets
+            except OSError:
+                pass
+        #if os.fork():
+            #time.sleep(2)
+            # Note: pid vars in db won't be updated until bot connects and joins channel,
+            # about 5 seconds.  Same for kill.
+            #apache_pid = os.getpid()
+            #db(db.bot_vars.tbl_k == 'apache_pid').update(v=apache_pid)
+            #response.flash = "Bot started successfully"
+            #return sets
+        #else:
+            #os.system('python web2py.py -S bot -M -R applications/bot/private/bot_run.py')
+            #os._exit(0)
+        os.system('rm ponybot_stdout.log')
+        os.system('python web2py.py -S freebot -M -R applications/freebot/private/bot_run.py > freebot_stdout.log')
+        return sets
+    elif len(request.args) and request.args[0] == 'stop':
+        # There are four processes of interest when killing the bot
+        # The first two are the Python instance and the sh instance
+        # created by the call to os.system() (bot_pid and bot_ppid)
+        # Those processes are parented to a child of the apache thread
+        # that is created when we os.fork()
+        # That process exit()s on its own when the children are killed,
+        # but usually turns into a zombie process
+        # Killing the parent apache thread (which is then replaced by
+        # the apache daemon) cleans up the zombie process (apache_pid)
+        bot_pid = int(bot_utils.get_item('pid', db))
+        bot_ppid = int(bot_utils.get_item('ppid', db))
+        apache_pid = int(bot_utils.get_item('apache_pid', db))
+        if bot_pid:
+            try:
+                os.kill(bot_pid, signal.SIGKILL)
+                #os.kill(bot_ppid, signal.SIGKILL)
+            except OSError:
+                response.flash = "No such process"
+            else:
+                response.flash = "Bot killed"
+            db(db.bot_vars.tbl_k == 'pid').update(v='0')
+            db(db.bot_vars.tbl_k == 'ppid').update(v='0')
+            #os.kill(apache_pid, signal.SIGKILL)  # Oops, since apache recycles threads, this may kill the thread that called this function
+            #db(db.bot_vars.tbl_k == 'apache_pid').update(v='0')
+            return sets
+        else:
+            response.flash = "Bot not running or pid not stored"
+            return sets
+    else:
+        return sets
+
+
+def user():
+    """
+    exposes:
+    http://..../[app]/default/user/login
+    http://..../[app]/default/user/logout
+    http://..../[app]/default/user/register
+    http://..../[app]/default/user/profile
+    http://..../[app]/default/user/retrieve_password
+    http://..../[app]/default/user/change_password
+    http://..../[app]/default/user/manage_users (requires membership in
+    use @auth.requires_login()
+        @auth.requires_membership('group name')
+        @auth.requires_permission('read','table name',record_id)
+    to decorate functions that need access control
+    """
+    return dict(form=auth())
+
+@cache.action()
+def download():
+    """
+    allows downloading of uploaded files
+    http://..../[app]/default/download/[filename]
+    """
+    return response.download(request, db)
+
+
+def call():
+    """
+    exposes services. for example:
+    http://..../[app]/default/call/jsonrpc
+    decorate with @services.jsonrpc the functions to expose
+    supports xml, json, xmlrpc, jsonrpc, amfrpc, rss, csv
+    """
+    return service()
+
+
+@auth.requires_signature()
+def data():
+    """
+    http://..../[app]/default/data/tables
+    http://..../[app]/default/data/create/[table]
+    http://..../[app]/default/data/read/[table]/[id]
+    http://..../[app]/default/data/update/[table]/[id]
+    http://..../[app]/default/data/delete/[table]/[id]
+    http://..../[app]/default/data/select/[table]
+    http://..../[app]/default/data/search/[table]
+    but URLs must be signed, i.e. linked with
+      A('table',_href=URL('data/tables',user_signature=True))
+    or with the signed load operator
+      LOAD('default','data.load',args='tables',ajax=True,user_signature=True)
+    """
+    return dict(form=crud())

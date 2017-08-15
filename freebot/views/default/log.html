@@ -1,0 +1,13 @@
+{{extend 'layout.html'}}
+{{if rows:}}
+<span style='font-family:monospace;'>
+{{for r in rows:}}
+    {{="{} <{}> {}".format(r.event_time.strftime('%x %X'), r.event_source, r.event_message)}}
+    {{=XML('<br />')}}
+{{pass}}
+</span>
+    {{else:}}
+    <h3>
+        No logs available
+    </h3>
+    {{pass}}

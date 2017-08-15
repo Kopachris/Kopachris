@@ -1,0 +1,139 @@
+# -*- coding: utf-8 -*-
+# this file is released under public domain and you can use without limitations
+
+#########################################################################
+## This is a sample controller
+## - index is the default action of any application
+## - user is required for authentication and authorization
+## - download is for downloading files uploaded in the db (does streaming)
+## - call exposes all registered services (none by default)
+#########################################################################
+import os, bot_utils
+import signal
+
+
+def index():
+    """
+    example action using the internationalization operator T and flash
+    rendered by views/default/index.html or views/generic.html
+
+    if you need a simple wiki simple replace the two lines below with:
+    return auth.wiki()
+    """
+    #response.flash = "Test"
+    #return auth.wiki()
+    return dict()
+
+
+@auth.requires_membership('wheel')
+def bot_admin():
+    """
+    BotenAlfred admin panel
+
+    Will display whether or not bot is running (if pid exists and os.getpgid(pid)
+    (getpgid() will raise OSError if process doesn't exist)
+    Will give option to start bot if not running, stop bot if running (link to bot/default/bot_start or bot/default/bot_stop)
+    List all modules with edit button next to each (link to bot/default/bot_module/id)
+    List current bot configuration (server, port, channels, nickname, etc.), provide edit button (link to /bot/default/bot_edit)
+    """
+    #if request.vars.started:
+        #response.flash = "Bot started successfully"
+    #if request.vars.running:
+        #response.varsflash = "Bot already running"
+    #if request.vars.killed:
+        #response.flash = "Bot killed successfully"
+    #if not request.vars.killed and request.vars.killed is not None:
+        #response.flash = "Bot not running"
+    if len(request.args) and request.args[0] == 'start':
+        bot_pid = int(bot_utils.get_item('pid', db))
+        if bot_pid:
+            try:
+                if os.getpgid(bot_pid):
+                    # bot already running
+                    response.flash = "Bot not started or already running"
+                    return dict()
+            except OSError:
+                pass
+        # bot not running
+        #import bot
+        #bot.init_bot(db)
+        if os.fork():
+            response.flash = "Bot started successfully"
+            return dict()
+        else:
+            os.system('python web2py.py -S bot -M -R applications/bot/private/bot_run.py')
+        #response.flash = "Bot started successfully"
+        #return dict()
+    elif len(request.args) and request.args[0] == 'stop':
+        bot_pid = int(bot_utils.get_item('pid', db))
+        bot_ppid = int(bot_utils.get_item('ppid', db))
+        if bot_pid:
+            os.kill(bot_pid, signal.SIGKILL)
+            db(db.bot_vars.tbl_k == 'pid').update(v='0')
+            os.kill(bot_ppid, signal.SIGKILL)
+            db(db.bot_vars.tbl_k == 'ppid').update(v='0')
+        #redirect(URL('bot_admin', vars=dict(killed=killed)))
+            #import bot
+            #bot.kill_bot()
+            response.flash = "Bot killed"
+            return dict()
+        else:
+            response.flash = "Bot not running or pid not stored"
+            return dict()
+    else:
+        #response.flash = bot_utils.get_item('pid', db)
+        return dict()
+
+
+def user():
+    """
+    exposes:
+    http://..../[app]/default/user/login
+    http://..../[app]/default/user/logout
+    http://..../[app]/default/user/register
+    http://..../[app]/default/user/profile
+    http://..../[app]/default/user/retrieve_password
+    http://..../[app]/default/user/change_password
+    http://..../[app]/default/user/manage_users (requires membership in
+    use @auth.requires_login()
+        @auth.requires_membership('group name')
+        @auth.requires_permission('read','table name',record_id)
+    to decorate functions that need access control
+    """
+    return dict(form=auth())
+
+@cache.action()
+def download():
+    """
+    allows downloading of uploaded files
+    http://..../[app]/default/download/[filename]
+    """
+    return response.download(request, db)
+
+
+def call():
+    """
+    exposes services. for example:
+    http://..../[app]/default/call/jsonrpc
+    decorate with @services.jsonrpc the functions to expose
+    supports xml, json, xmlrpc, jsonrpc, amfrpc, rss, csv
+    """
+    return service()
+
+
+@auth.requires_signature()
+def data():
+    """
+    http://..../[app]/default/data/tables
+    http://..../[app]/default/data/create/[table]
+    http://..../[app]/default/data/read/[table]/[id]
+    http://..../[app]/default/data/update/[table]/[id]
+    http://..../[app]/default/data/delete/[table]/[id]
+    http://..../[app]/default/data/select/[table]
+    http://..../[app]/default/data/search/[table]
+    but URLs must be signed, i.e. linked with
+      A('table',_href=URL('data/tables',user_signature=True))
+    or with the signed load operator
+      LOAD('default','data.load',args='tables',ajax=True,user_signature=True)
+    """
+    return dict(form=crud())

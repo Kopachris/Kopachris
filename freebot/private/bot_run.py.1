@@ -1,0 +1,69 @@
+import bot, bot_utils, os, sys
+#import daemonize
+from createdaemon import createDaemon
+from signal import *
+
+def get_cmd(signum, frame):
+    cmd_str = bot_utils.get_item('cur_cmd', db)
+    cmd_str = cmd_str.split()
+    cmd = cmd_str[0]
+    params = cmd_str[1:]
+    if cmd == 'msg':
+        our_bot.send_message(params[0], ' '.join(params[1:]))
+    elif cmd == 'join':
+        our_bot.join_channel(params[0])
+    elif cmd == 'part':
+        our_bot.part_channel(params[0])
+
+def d():
+    pid = os.fork()
+    if pid:
+        # in parent
+        db(k == 'ppid').update(v=pid)
+        sys.exit(0)
+    # in child
+    pid = os.setsid()
+    db(k == 'pid').update(v=pid)
+    for descriptor in (sys.stdin, sys.stdout, sys.stderr):
+        descriptor.close()
+        descriptor = open('/dev/null', 'rw')
+
+def main():
+    k = db.bot_vars.tbl_k
+    bot_nick = bot_utils.get_item('nick', db)
+    bot_user = bot_utils.get_item('user', db)
+    bot_rname = bot_utils.get_item('rname', db)
+    bot_server = bot_utils.get_item('server', db)
+    bot_port = int(bot_utils.get_item('port', db))
+    bot_chans = bot_utils.get_item('chans', db)
+    db(k == 'pid').update(v=os.getpid())
+    db(k == 'ppid').update(v=os.getppid())
+
+    print "Connecting:"
+    print bot_server + ':' + str(bot_port)
+    print bot_chans
+    print bot_nick + ':' + bot_user + ':' + bot_rname
+
+    signal(SIGUSR1, get_cmd)
+
+    our_bot = bot.ircBot(bot_nick)
+    our_bot.db = db
+    our_bot.user = bot_user
+    our_bot.real_name = bot_rname
+    our_bot.connect(bot_server,
+                port=bot_port,
+                channel=bot_chans,
+                )
+    our_bot.start()
+
+#daemonize.start(main)
+#createDaemon()
+pid = os.fork()
+if pid:
+    sys.exit(0)
+else:
+    pid = os.fork()
+    if pid:
+        sys.exit(0)
+    else:
+     main()

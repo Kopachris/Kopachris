@@ -1,0 +1,32 @@
+{{extend 'layout.html'}}
+<h3>
+    Admin panel
+</h3>
+<table width=80% margin=10% padding=20px>
+    <tr>
+        <td>
+<h4>
+    Current settings:
+</h4>
+        </td>
+        <td></td>
+    </tr>
+    <tr>
+        <td>
+{{=bot_settings}}
+        </td>
+        <td>
+            <a href="/freebot/default/bot_admin/stop" class="btn">Stop bot</a> <br /><br />
+            <a href="/freebot/default/bot_admin/start" class="btn">Start bot</a>
+        </td>
+    </tr>
+</table>
+<hr />
+<h4>
+    Module settings:
+</h4>
+<ul>
+{{for f in modules:}}
+    <li>{{=A(f.name, _href=URL("module_update", vars=dict(name=f.name)))}}</li>
+{{pass}}
+</ul>
