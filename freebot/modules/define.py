@@ -12,7 +12,7 @@ event_type = "PRIVMSG"
 
 _cmd = ["!define"]
 
-API = "http://api.wordnik.com/v4/word.json/{}/definitions?limit=1&partOfSpeech={}&api_key=a2a73e7b926c924fad7001ca3111acd55af2ffabf50eb4ae5"
+API = "http://api.wordnik.com/v4/word.json/{}/definitions?limit=1&partOfSpeech={}&api_key=<apikey>"
 H_HTTP = {'User-Agent': 'Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11'}
 
 def init(db):

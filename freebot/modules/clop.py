@@ -23,7 +23,7 @@ event_type = "PRIVMSG"
 # a lot of websites block specific user-agent strings associated with bots
 # use this to avoid that if your module retrieves webpages
 H_HTTP = {'User-Agent': 'Mozilla/5.0 (X11; U; Linux i686) Gecko/20071127 Firefox/2.0.0.11'}
-D_URL = 'http://derpiboo.ru/search.json?q=explicit%2C+-gore%2C+-grimdark%2C+-foalcon%2C+-scat%2C+-bestiality&random_image=y&min_score=100&key=yvzKEDY4zMGtCEHk4pbt'
+D_URL = 'http://derpiboo.ru/search.json?q=explicit%2C+-gore%2C+-grimdark%2C+-foalcon%2C+-scat%2C+-bestiality&random_image=y&min_score=100&key=<apikey>'
 #D_URL = 'https://derpiboo.ru/search.json?q=%28explicit+OR+questionable+OR+suggestive%29%2C+-gore%2C+-grimdark&random_image=y&min_score=100'
 D_GET = {'q': 'explicit, -gore, -grimdark',
          'random_image': 'y',

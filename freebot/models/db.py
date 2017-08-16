@@ -11,7 +11,7 @@
 
 if not request.env.web2py_runtime_gae:
     ## if NOT running on Google App Engine use SQLite or other DB
-    db = DAL('mysql://web2py:jUg1&XT0tx15CPL@localhost/freebot')
+    db = DAL('mysql://web2py:xxxxxxxxxx@localhost/freebot')
     #db = DAL('sqlite://bot.db')
 else:
     ## connect to Google BigTable (optional 'google:datastore://namespace')
@@ -51,10 +51,10 @@ auth.define_tables(username=False, signature=False)
 mail = auth.settings.mailer
 #mail.settings.server = 'smtp.gmail.com:587'
 #mail.settings.sender = 'christophkoch93@gmail.com'
-#mail.settings.login = 'christophkoch93@gmail.com:c#21570p#32'
+#mail.settings.login = 'christophkoch93@gmail.com:xxxxxxxxxx'
 mail.settings.server = 'smtp.live.com:587'
 mail.settings.sender = 'admin@kopachr.is'
-mail.settings.login = 'admin@kopachr.is:C2xj1fl%!aYNKIy'
+mail.settings.login = 'admin@kopachr.is:xxxxxxxxxxxxx'
 mail.settings.tls = True
 
 ## configure auth policy
